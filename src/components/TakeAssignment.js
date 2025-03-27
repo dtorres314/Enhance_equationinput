@@ -1,4 +1,3 @@
-// TakeAssignmentPage.js
 import React, { useState, useRef } from "react";
 import { addStyles, EditableMathField } from "react-mathquill";
 import { renderToString } from "katex";
@@ -22,28 +21,26 @@ export default function TakeAssignmentPage() {
   const [answers, setAnswers] = useState({});
   const [convertedHtml, setConvertedHtml] = useState({});
   const [focusedIdx, setFocusedIdx] = useState(null);
-
   const mqRefs = useRef({});
+  const blurTimer = useRef(null);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(text, "application/xml");
+    const doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.querySelector("parsererror")) return;
     const root = doc.documentElement;
     if (root.nodeName !== "Problem") return;
-
     const title = root.querySelector("Title")?.textContent || "Untitled";
     const statement = root.querySelector("Statement")?.textContent || "";
     const stepsNode = root.querySelector("Steps");
     let steps = [];
     if (stepsNode) {
       const stepNodes = [...stepsNode.querySelectorAll("ProblemStep")];
-      steps = stepNodes.map((sn, idx) => {
+      steps = stepNodes.map((sn, i) => {
         const st = sn.querySelector("Statement")?.textContent || "(No Step)";
-        return { index: idx + 1, statement: st };
+        return { index: i + 1, statement: st };
       });
     }
     setProblem({ title, statement, steps });
@@ -53,32 +50,44 @@ export default function TakeAssignmentPage() {
   };
 
   const updateAnswer = (idx, latex) => {
-    setAnswers((prev) => ({ ...prev, [idx]: latex }));
+    setAnswers((p) => ({ ...p, [idx]: latex }));
   };
 
-  const convertThisPart = (idx) => {
+  const convertPart = (idx) => {
     const latexVal = answers[idx] || "";
     const htmlVal = convertLatexToHtml(latexVal);
-    setConvertedHtml((prev) => ({ ...prev, [idx]: htmlVal }));
+    setConvertedHtml((p) => ({ ...p, [idx]: htmlVal }));
   };
 
-  const handleInsert = (idx, symbol) => {
+  const handleInsertSymbol = (idx, symbol) => {
     const ref = mqRefs.current[idx];
-    if (ref && ref.write) {
+    if (ref?.write) {
       ref.write(symbol);
       ref.focus();
     }
   };
 
-  const handleFocus = (stepIndex) => {
-    setFocusedIdx(stepIndex);
+  const handleFocus = (idx) => {
+    if (blurTimer.current) {
+      clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
+    setFocusedIdx(idx);
   };
 
   const handleBlur = () => {
-    // Delay so that a click on the pad doesn't close immediately
-    setTimeout(() => {
+    blurTimer.current = setTimeout(() => {
       setFocusedIdx(null);
     }, 150);
+  };
+
+  const handlePadMouseDown = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (blurTimer.current) {
+      clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
   };
 
   return (
@@ -92,7 +101,6 @@ export default function TakeAssignmentPage() {
         onChange={handleFileChange}
         style={{ marginBottom: 10 }}
       />
-
       {problem && (
         <div
           style={{
@@ -119,13 +127,12 @@ export default function TakeAssignmentPage() {
               >
                 <h4>Part {step.index}</h4>
                 <p>{step.statement}</p>
-
                 <EditableMathField
                   latex={val}
-                  onChange={(mf) => updateAnswer(step.index, mf.latex())}
                   config={mathquillConfig}
-                  mathquillDidMount={(instance) => {
-                    mqRefs.current[step.index] = instance;
+                  onChange={(mf) => updateAnswer(step.index, mf.latex())}
+                  mathquillDidMount={(inst) => {
+                    mqRefs.current[step.index] = inst;
                   }}
                   onFocus={() => handleFocus(step.index)}
                   onBlur={handleBlur}
@@ -138,8 +145,6 @@ export default function TakeAssignmentPage() {
                     width: "100%",
                   }}
                 />
-
-                {/* Show the pad if this field has focus */}
                 {isFocused && (
                   <div
                     style={{
@@ -148,20 +153,19 @@ export default function TakeAssignmentPage() {
                       left: "110%",
                       zIndex: 999,
                     }}
+                    onMouseDown={handlePadMouseDown}
                   >
                     <PhysicsPad
-                      onInsert={(sym) => handleInsert(step.index, sym)}
+                      onInsert={(sym) => handleInsertSymbol(step.index, sym)}
                     />
                   </div>
                 )}
-
                 <p style={{ fontSize: "0.9em", marginTop: 6 }}>
                   <strong>LaTeX:</strong> {val}
                 </p>
-
                 <button
-                  style={{ cursor: "pointer", marginBottom: 6 }}
-                  onClick={() => convertThisPart(step.index)}
+                  onClick={() => convertPart(step.index)}
+                  style={{ marginBottom: 6 }}
                 >
                   Convert to HTML
                 </button>
